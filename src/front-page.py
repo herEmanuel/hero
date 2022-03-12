@@ -1,4 +1,5 @@
 import pygame
+import pygame_gui as gui
 pygame.init()
 # Cores
 branco = (255, 255, 255)
@@ -9,16 +10,21 @@ altura = 720
 largura = 1080
 tamanho = 250
 meio = (largura-tamanho)/2
-#print(meio)
+# print(meio)
 
 fundo = pygame.display.set_mode([largura, altura])
 background = pygame.transform.scale(pygame.image.load("grama background.jpg"),[1080, 720])
 botao = pygame.transform.scale(pygame.image.load('start-button.png'), (250, 103))
+clock = pygame.time.Clock()
 
+manager = gui.UIManager((1080, 720), 'theme.json')
 fonte_padrao = pygame.font.get_default_font()
 
+test_button = gui.elements.UIButton(relative_rect=pygame.Rect((415, 300), (250, 50)), text="Say Hello",
+                                    manager=manager)
+gui.elements.UITextEntryLine(relative_rect=pygame.Rect(415, 200, 250, 50), manager=manager)
 def caixa_nome():
-    pygame.draw.rect(background, branco,(415, 100, 250,50), width=0, border_radius=0)
+    pygame.draw.rect(background, branco, (415, 100, 250, 50))
 nada_escrito = True
 nome_cinza = pygame.font.SysFont(fonte_padrao, 50)
 
@@ -34,9 +40,15 @@ pos_x = 420 # Posição das letras na caixa de nome
 
 loop = True
 while loop:
+    relogio = clock.tick(60)
+    manager.update(relogio)
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             loop = False
+        manager.process_events(event)
+        if event.type == gui.UI_BUTTON_PRESSED:
+            if event.ui_element == test_button:
+                print("Hello, World!")
         if event.type == pygame.MOUSEBUTTONDOWN:
             if pygame.mouse.get_pressed()[0]:
                 mouse_x = pygame.mouse.get_pos()[0]
@@ -58,8 +70,11 @@ while loop:
     fundo.blit(background, (0, 0))
     fundo.blit(botao, (415,500))
     caixa_nome()
+    gui.elements.UITextEntryLine(relative_rect=pygame.Rect(415, 200, 250, 50), manager=manager)
     texto = nome_cinza.render("NOME", True, cinza)
     if nada_escrito:
         fundo.blit(texto, (420, 110))
+    manager.draw_ui(fundo)
+    manager.update(relogio)
     pygame.display.update()
 pygame.quit()
