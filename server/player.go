@@ -22,7 +22,8 @@ type Player struct {
 	PosY   int    `json:"y"`
 	Weapon int
 
-	room *Room
+	room    *Room
+	leaving bool
 }
 
 func newPlayer(conn *websocket.Conn, name string, id int, room *Room) *Player {
@@ -66,18 +67,26 @@ func (player *Player) processMovement(xOffset, yOffset int) {
 
 func (player *Player) update() {
 	for {
+		if player.leaving {
+			return
+		}
+
 		//TODO: send all the player info in 1 message?
 		for _, pl := range player.room.players {
+			if player.leaving {
+				return
+			}
+
 			if pl == player {
 				continue
 			}
 
-			err := player.conn.WriteJSON(&pl)
-			if err != nil {
-				log.Fatalln("fuck bruh error ", err)
+			if err := player.conn.WriteJSON(&pl); err != nil {
+				log.Printf("Got an error while writing to %v, %v\n", player.conn.RemoteAddr().String(), err)
+				player.disconnect()
 			}
 
-			time.Sleep(time.Millisecond * 50)
+			time.Sleep(time.Millisecond * 50) //TODO: ??
 		}
 	}
 }
@@ -85,13 +94,40 @@ func (player *Player) update() {
 func (player *Player) receiveInput() {
 	for {
 		var event Event
-		err := player.conn.ReadJSON(&event)
-		if err != nil {
-			log.Fatalln("fuck bruh error ", err)
+
+		if err := player.conn.ReadJSON(&event); err != nil {
+			log.Printf("Got an error while reading from %v, %v\n", player.conn.RemoteAddr().String(), err)
+			player.disconnect()
 		}
+
 		event.playerId = player.id
 
+		if event.EventType == leaveRoom {
+			if len(player.room.players) == 1 {
+				player.room.closing = true
+				player.room.events <- event
+				return
+			}
+
+			player.room.events <- event
+
+			player.disconnect()
+			return
+		}
+
 		player.room.events <- event
+	}
+}
+
+func (player *Player) disconnect() {
+	player.leaving = true
+
+	for i, pl := range player.room.players {
+		if pl == player {
+			player.room.lock.Lock()
+			player.room.players = append(player.room.players[:i], player.room.players[i+1:]...)
+			player.room.lock.Unlock()
+		}
 	}
 }
 
@@ -99,40 +135,49 @@ func joinRoom(conn *websocket.Conn, name, roomCode string) {
 	log.Println("Joining room haha ", roomCode)
 	var player *Player
 
-	for _, room := range rooms {
-		log.Println("a")
+	for _, room := range globalState.rooms {
 		if room.code != roomCode {
 			continue
 		}
 
 		if len(room.players) >= maxPlayersPerRoom {
-			// repeat all the handshake somehow idk
+			sendError(conn, fullRoomErr)
 			return
 		}
 
 		player = newPlayer(conn, name, room.players[len(room.players)-1].id+1, room)
+
+		room.lock.Lock()
 		room.players = append(room.players, player)
+		room.lock.Unlock()
 	}
 
 	if player != nil {
 		/* one goroutine for receiving user's input, and another for
 		   sending the state of the game... ooof
 		*/
-		go player.receiveInput()
-		player.update()
+		go player.update()
+		player.receiveInput()
+		//BIG TODO: does ReadJSON keep returning an error if the connection has been closed already?
+		return
 	}
 
-	log.Println("got here, oh shit")
+	sendError(conn, invalidRoomCodeErr)
 }
 
 func createRoom(conn *websocket.Conn, playerName string) {
 	player := newPlayer(conn, playerName, 0, nil)
 	room := newRoom(player)
 	player.room = room
-	rooms = append(rooms, room)
-	log.Println("new room code: ", room.code)
+
+	globalState.lock.Lock()
+	globalState.rooms = append(globalState.rooms, room)
+	globalState.lock.Unlock()
+
+	log.Printf("New room %s created by %s: \n", room.code, conn.RemoteAddr().String())
+
 	go room.mainLoop()
 
-	go player.receiveInput()
-	player.update()
+	go player.update()
+	player.receiveInput()
 }

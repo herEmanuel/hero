@@ -3,6 +3,7 @@ package main
 const (
 	move = iota
 	shoot
+	leaveRoom
 )
 
 type Event struct {
