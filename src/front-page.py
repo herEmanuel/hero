@@ -18,7 +18,7 @@ class HeroIoWindow(gui.elements.UIWindow):
         largura = 1080
 
         self.fundo = pygame.display.set_mode([largura, altura])
-        self.background = pygame.transform.scale(pygame.image.load("grama background.jpg"),[1080, 720])
+        self.background = pygame.transform.scale(pygame.image.load("../assets/grama background.jpg"),[1080, 720])
         #self.botao = pygame.transform.scale(pygame.image.load('start-button.png'), (250, 103))
         self.clock = pygame.time.Clock()
 

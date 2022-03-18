@@ -11,8 +11,8 @@ largura = 1080
 tamanho_botoes = 250
 
 fundo = pygame.display.set_mode([largura, altura])
-background = pygame.transform.scale(pygame.image.load("grama background.jpg"),[1080, 720])
-botao = pygame.transform.scale(pygame.image.load('start-button.png'), (250, 103))
+background = pygame.transform.scale(pygame.image.load("../assets/grama background.jpg"),[1080, 720])
+botao = pygame.transform.scale(pygame.image.load('../assets/start-button.png'), (250, 103))
 clock = pygame.time.Clock()
 
 manager = gui.UIManager((1080, 720))
