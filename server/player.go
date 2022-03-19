@@ -20,10 +20,16 @@ type Player struct {
 	Name   string `json:"name"`
 	PosX   int    `json:"x"`
 	PosY   int    `json:"y"`
+	Health int    `json:"health"`
+	Kills  int    `json:"kills"`
 	Weapon int
 
 	room    *Room
 	leaving bool
+}
+
+func getSpawnPosition() (int, int) {
+	return 0, 0
 }
 
 func newPlayer(conn *websocket.Conn, name string, id int, room *Room) *Player {

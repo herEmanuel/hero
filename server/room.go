@@ -11,6 +11,35 @@ const (
 	maxEvents = 1024
 )
 
+type Obstacle struct {
+	x      int
+	y      int
+	width  int
+	height int
+}
+
+/* We just have one non-customizable map, so we're just gonna
+   hardcode all of the obstacles in it
+*/
+
+var mapObstacles []Obstacle = []Obstacle{
+	Obstacle{530, 217, 65, 65},
+	Obstacle{812, 47, 32, 104},
+	Obstacle{301, 381, 90, 58},
+	Obstacle{1047, 267, 60, 60},
+	Obstacle{944, 507, 69, 84},
+	Obstacle{1248, 557, 104, 32},
+	Obstacle{1257, 679, 75, 75},
+	Obstacle{20, 636, 81, 81},
+	Obstacle{91, 692, 73, 73},
+	Obstacle{640, 825, 81, 81},
+	Obstacle{1997, 24, 65, 65},
+	Obstacle{2423, 467, 60, 60},
+	Obstacle{2423, 540, 60, 60},
+	Obstacle{1248, 1217, 104, 32},
+	Obstacle{1320, 1288, 32, 104},
+}
+
 type Room struct {
 	code    string
 	lock    sync.Mutex
