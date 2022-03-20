@@ -14,10 +14,10 @@ const (
 	serverPort    = 8080
 	runningEnvVar = "RUNNING_ENV"
 
-	mapWidth  = 800
-	mapHeight = 800
+	mapWidth  = 2560
+	mapHeight = 1440
 
-	maxPlayersPerRoom = 8
+	maxPlayersPerRoom = 16
 )
 
 // Message types

@@ -15,16 +15,18 @@ const (
 )
 
 type Player struct {
-	conn   *websocket.Conn
-	id     int
-	Name   string `json:"name"`
-	PosX   int    `json:"x"`
-	PosY   int    `json:"y"`
-	Health int    `json:"health"`
-	Kills  int    `json:"kills"`
-	Weapon int
+	conn      *websocket.Conn
+	Id        int    `json:"player_id"`
+	Name      string `json:"name"`
+	PosX      int    `json:"x"`
+	PosY      int    `json:"y"`
+	Health    int    `json:"health"`
+	Kills     int    `json:"kills"`
+	Direction Vec2f  `json:"direction"`
+	Weapon    int
 
 	room    *Room
+	events  chan Event
 	leaving bool
 }
 
@@ -38,16 +40,30 @@ func newPlayer(conn *websocket.Conn, name string, id int, room *Room) *Player {
 	//TODO: adjust this later
 	return &Player{
 		conn:   conn,
-		id:     id,
+		Id:     id,
 		Name:   name,
 		PosX:   100,
 		PosY:   100,
-		Weapon: 0,
+		Health: 100,
 		room:   room,
+		events: make(chan Event, maxEvents),
 	}
 }
 
-func (player *Player) processMovement(xOffset, yOffset int) {
+func (player *Player) checkCollision(xOffset, yOffset, x, y, width, height int) bool {
+	updatedPlayerX := xOffset * velocity
+	updatedPlayerY := yOffset * velocity
+
+	if updatedPlayerX < x+width && updatedPlayerX+playerWidth > x {
+		if updatedPlayerY < y+height && updatedPlayerY+playerHeight > y {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (player *Player) processMovement(xOffset, yOffset int, direction Vec2f) {
 	log.Println("at process movement")
 	if xOffset > 0 {
 		xOffset = 1
@@ -61,14 +77,27 @@ func (player *Player) processMovement(xOffset, yOffset int) {
 		yOffset = -1
 	}
 
+	player.Direction = direction.normalize()
+
 	if player.PosX+xOffset*velocity > 0 && player.PosX+playerWidth+xOffset*velocity < mapWidth {
 		if player.PosY+yOffset*velocity > 0 && player.PosY+playerHeight+yOffset*velocity < mapHeight {
+			for _, obstacle := range mapObstacles {
+				if player.checkCollision(xOffset, yOffset, obstacle.posX(), obstacle.posY(), obstacle.width(), obstacle.height()) {
+					return
+				}
+			}
+
+			// TODO: allow players to slowly push others
+			for _, pl := range player.room.players {
+				if player.checkCollision(xOffset, yOffset, pl.PosX, pl.PosY, playerWidth, playerHeight) {
+					return
+				}
+			}
+
 			player.PosX += xOffset * velocity
 			player.PosY += yOffset * velocity
 		}
 	}
-
-	// TODO: check for collisions
 }
 
 func (player *Player) update() {
@@ -77,23 +106,16 @@ func (player *Player) update() {
 			return
 		}
 
-		//TODO: send all the player info in 1 message?
-		for _, pl := range player.room.players {
-			if player.leaving {
+		if err := player.conn.WriteJSON(player.room.players); err != nil {
+			log.Printf("Got an error while writing to %v, %v\n", player.conn.RemoteAddr().String(), err)
+			if !player.leaving {
+				// TODO: aaaaa
+				player.disconnect()
 				return
 			}
-
-			if pl == player {
-				continue
-			}
-
-			if err := player.conn.WriteJSON(&pl); err != nil {
-				log.Printf("Got an error while writing to %v, %v\n", player.conn.RemoteAddr().String(), err)
-				player.disconnect()
-			}
-
-			time.Sleep(time.Millisecond * 50) //TODO: ??
 		}
+
+		time.Sleep(time.Millisecond * 50) //TODO: ??
 	}
 }
 
@@ -104,9 +126,10 @@ func (player *Player) receiveInput() {
 		if err := player.conn.ReadJSON(&event); err != nil {
 			log.Printf("Got an error while reading from %v, %v\n", player.conn.RemoteAddr().String(), err)
 			player.disconnect()
+			return
 		}
 
-		event.playerId = player.id
+		event.PlayerId = player.Id
 
 		if event.EventType == leaveRoom {
 			if len(player.room.players) == 1 {
@@ -151,7 +174,7 @@ func joinRoom(conn *websocket.Conn, name, roomCode string) {
 			return
 		}
 
-		player = newPlayer(conn, name, room.players[len(room.players)-1].id+1, room)
+		player = newPlayer(conn, name, room.players[len(room.players)-1].Id+1, room)
 
 		room.lock.Lock()
 		room.players = append(room.players, player)
