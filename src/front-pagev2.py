@@ -21,6 +21,33 @@ start_button = pygame_gui.elements.UIButton(relative_rect=pygame.Rect((415, 500)
 caixa_nome = pygame_gui.elements.UITextEntryLine(relative_rect=pygame.Rect(415, 100, 250, 50),
                                     manager=manager)
 
+class Sprites(pygame.sprite.Sprite):
+
+    def __init__(self,png1, png2, png3, png4):
+        pygame.sprite.Sprite.__init__(self)
+        self.sprites = []
+        self.sprites.append(pygame.image.load(f'../sprites/{png1}'))
+        self.sprites.append(pygame.image.load(f'../sprites/{png2}'))
+        self.sprites.append(pygame.image.load(f'../sprites/{png3}'))
+        self.sprites.append(pygame.image.load(f'../sprites/{png4}'))
+        self.atual = 0
+        self.image = self.sprites[self.atual]
+        self.image = pygame.transform.scale(self.image, (320, 320))
+
+        self.rect = self.image.get_rect()
+        self.rect.topleft = 380, 200
+
+    def update(self):
+        self.atual += 1
+        if self.atual >= len(self.sprites):
+            self.atual = 0
+        self.image = self.sprites[int(self.atual)]
+        self.image = pygame.transform.scale(self.image, (320, 320))
+
+sprites = pygame.sprite.Group()
+hero = Sprites('modelo 1 - parado.png', 'modelo 2 - parado.png','modelo 3 - parado.png','modelo 4 - parado.png')
+sprites.add(hero)
+
 is_running = True
 while is_running:
     relogio = clock.tick(60)/1000
@@ -35,7 +62,8 @@ while is_running:
                 print('Começa o jogo')
                 nickname = caixa_nome.get_text()
                 print(nickname)
-
+                sprites.update()
+    sprites.draw(tela)
     manager.update(relogio)
     manager.draw_ui(tela)
     pygame.display.update()
