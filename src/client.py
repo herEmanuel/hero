@@ -1,5 +1,9 @@
-import websocket, json, pygame, threading
+import websocket, json, pygame, threading, math
+from pygame import Vector2
 from enum import Enum
+
+SERVER = "ws://localhost:8080/ws"
+VELOCITY = 5
 
 class Message(Enum):
     JoinRoom = 0
@@ -11,69 +15,105 @@ class Event(Enum):
     Move = 0
     Shoot = 1
 
-players = []
+class Player(pygame.sprite.Sprite):
+    def __init__(self, ws: websocket.WebSocket) -> None:
+        super().__init__()
 
-def handshake(conn: websocket.WebSocket):
-    option = input("join or create?")
-    if option == "join":
-        code = input("Enter room code: ")
-        joinRoom = {"type": Message.JoinRoom.value, "name": "test", "room": code}
-        res = json.dumps(joinRoom)
-        print(res)
-        conn.send(res)
-    else:
-        createRoom = {"type": Message.CreateRoom.value, "name": "test"}
-        res = json.dumps(createRoom)
-        print(res)
-        conn.send(res)
+        self.ws = ws
+        self.direction = Vector2(1, 0)
+        self.pos = Vector2(0, 0)
+        
+        self.ogImage = pygame.image.load("../assets/start-button.png")
+        self.image = self.ogImage
 
-def on_message(conn: websocket.WebSocket, message):
-    #TODO: this only works when theres just one more player lol
-    global players
-    players = [json.loads(message)]
+        self.rect = self.image.get_rect()
 
-ws = websocket.WebSocketApp("ws://localhost:8080/ws", on_open=handshake, on_message=on_message)
+    def update(self) -> None:
+        pressedKeys = pygame.key.get_pressed()
+        if pressedKeys[pygame.K_w]:
+            self.pos.y -= VELOCITY
+            self.triggerMoveEvent(pygame.K_w)
+        if pressedKeys[pygame.K_s]:
+            self.pos.y += VELOCITY
+            self.triggerMoveEvent(pygame.K_s)
+        if pressedKeys[pygame.K_a]:
+            self.pos.x -= VELOCITY
+            self.triggerMoveEvent(pygame.K_a)
+        if pressedKeys[pygame.K_d]:
+            self.pos.x += VELOCITY
+            self.triggerMoveEvent(pygame.K_d)
 
-def move_event(x: int, y: int):
-    event = json.dumps({"type": Message.Data.value, "event_type": Event.Move.value, "x_offset": x, "y_offset": y})
-    ws.send(event)
+        mousePos = pygame.mouse.get_pos()   
+        angle = math.atan2(mousePos[0] - self.pos.y, mousePos[1] - self.pos.x)
+        print(math.degrees(angle))
+        self.image = pygame.transform.rotate(self.ogImage, math.degrees(angle))
+        self.rect = self.image.get_rect()
+        self.rect.center = (self.pos.x, self.pos.y)
 
-def mainLoop():
-    pygame.init()
-    screen = pygame.display.set_mode((800, 800))
+    def triggerMoveEvent(self, directionKey: int) -> None:
+        pass
 
-    rect = pygame.rect.Rect(100, 100, 50, 50)
+class Game():
+    def __init__(self) -> None:
+        pygame.init()
+        self.screen = pygame.display.set_mode((800, 800))
+        self.playerData = []
 
-    while True:
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                pygame.quit()
-                return
-            if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_w:
-                    move_event(0, -1)
-                    rect.y -= 5
-                if event.key == pygame.K_a:
-                    move_event(-1, 0)
-                    rect.x -= 5
-                if event.key == pygame.K_s:
-                    move_event(0, 1)
-                    rect.y += 5
-                if event.key == pygame.K_d:
-                    move_event(1, 0)
-                    rect.x += 5
+        self.serverThread = threading.Thread(target=self.websocketThread)
+        self.serverThread.start()
 
-        screen.fill((255, 255, 255))
-        pygame.draw.rect(screen, (255, 0, 0), rect)
-        if players:
-            print(players)
-        for player in players:
-            pygame.draw.rect(screen, (0, 255, 0), (player["x"], player["y"], 50, 50))
-        pygame.display.flip()
+        self.player = Player(self.ws)
 
-thread = threading.Thread(target=mainLoop)
-thread.start()
-print("wait for it")
-ws.run_forever()
+        self.mainLoop()
 
-thread.join()
+    def mainLoop(self) -> None:
+        while True:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    pygame.quit()
+                    return
+
+            self.player.update()
+
+            self.screen.fill((255, 255, 255))
+            self.screen.blit(self.player.image, self.player.rect)
+
+            # if players:
+            #     print(players)
+            # for player in players:
+            #     pygame.draw.rect(self.screen, (0, 255, 0), (player["x"], player["y"], 50, 50))
+
+            pygame.display.flip()
+
+    def websocketThread(self) -> None:
+        self.ws = websocket.WebSocketApp(SERVER, on_open=self.performHandshake, on_message=self.onServerMessage)
+        self.ws.run_forever()
+
+    def performHandshake(self, conn: websocket.WebSocket) -> None:
+        option = input("join or create?")
+        if option == "join":
+            code = input("Enter room code: ")
+            joinRoom = {"type": Message.JoinRoom.value, "name": "test", "room": code}
+            res = json.dumps(joinRoom)
+            print(res)
+            conn.send(res)
+        else:
+            createRoom = {"type": Message.CreateRoom.value, "name": "test"}
+            res = json.dumps(createRoom)
+            print(res)
+            conn.send(res)
+
+    def onServerMessage(self) -> None:
+        pass
+
+# def on_message(conn: websocket.WebSocket, message):
+#     #TODO: this only works when theres just one more player lol
+#     global players
+#     players = json.loads(message)
+
+# def move_event(x: int, y: int):
+#     event = json.dumps({"type": Message.Data.value, "event_type": Event.Move.value, "x_offset": x, "y_offset": y})
+#     ws.send(event)
+
+game = Game()
+game.mainLoop()

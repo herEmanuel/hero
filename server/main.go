@@ -5,22 +5,22 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"sync"
 
 	"github.com/gorilla/websocket"
 )
-
-// I haven't really tested any of this yet
 
 const (
 	serverPort    = 8080
 	runningEnvVar = "RUNNING_ENV"
 
-	mapWidth  = 800
-	mapHeight = 800
+	mapWidth  = 2560
+	mapHeight = 1440
 
-	maxPlayersPerRoom = 8
+	maxPlayersPerRoom = 16
 )
 
+// Message types
 const (
 	joinRoomMsg = iota
 	createRoomMsg
@@ -28,16 +28,28 @@ const (
 	errorMsg
 )
 
-var rooms []*Room
+const (
+	invalidRoomCodeErr = iota
+	fullRoomErr
+)
+
+type State struct {
+	rooms []*Room
+	lock  sync.Mutex
+}
+
+var globalState State
 
 var upgrader = websocket.Upgrader{}
 
-func sendError(conn *websocket.Conn, message string) {
-	var err map[string]interface{}
-	err["type"] = errorMsg
-	err["message"] = message
-	conn.WriteJSON(&err) //TODO: handle err
-	conn.Close()         // not sure
+func sendError(conn *websocket.Conn, errorCode int) {
+	message := map[string]int{"type": errorMsg, "code": errorCode}
+	if err := conn.WriteJSON(&message); err != nil {
+		if _, ok := err.(*websocket.CloseError); !ok {
+			// (probably, i think) an error related to the unmarshlling of the json
+			conn.Close() // TODO: close the conn gracefully
+		}
+	}
 }
 
 func entryPoint(w http.ResponseWriter, r *http.Request) {
@@ -52,43 +64,55 @@ func entryPoint(w http.ResponseWriter, r *http.Request) {
 }
 
 func handshake(conn *websocket.Conn) {
-	fmt.Println("Hey im here")
-	var message map[string]interface{}
-	err := conn.ReadJSON(&message) //TODO: handle error
-	if err != nil {
-		log.Fatalln("fuck bruh error ", err)
-	}
+	for {
+		log.Println("at handshake")
+		var message map[string]interface{}
+		if err := conn.ReadJSON(&message); err != nil {
+			log.Printf("Got an error while reading from %v, %v\n", conn.RemoteAddr().String(), err)
 
-	messageType, ok := message["type"].(float64)
-	if !ok {
-		log.Println("no type in the message, fck")
-		log.Printf("%v\n", message)
-		sendError(conn, "Expected the message to have a type")
-		return
-	}
+			if _, ok := err.(*websocket.CloseError); !ok {
+				// (probably, i think) an error related to the unmarshlling of the json
+				conn.Close() // TODO: close the conn gracefully
+			}
+		}
 
-	playerName, ok := message["name"].(string)
-	if !ok {
-		sendError(conn, "Expected the message to have the name of the player")
-		return
-	}
-
-	switch int(messageType) {
-	case joinRoomMsg:
-		roomCode, ok := message["room"].(string)
+		messageType, ok := message["type"].(float64)
 		if !ok {
-			sendError(conn, "Expected the message to have the room code")
+			conn.Close() // TODO: close the conn gracefully
 			return
 		}
 
-		joinRoom(conn, playerName, roomCode)
-	case createRoomMsg:
-		createRoom(conn, playerName)
-	default:
-		// bad msg
-	}
+		playerName, ok := message["name"].(string)
+		if !ok {
+			conn.Close() // TODO: close the conn gracefully
+			return
+		}
 
-	// disconnect
+		switch int(messageType) {
+		case joinRoomMsg:
+			roomCode, ok := message["room"].(string)
+			if !ok {
+				conn.Close() // TODO: close the conn gracefully
+				return
+			}
+
+			joinRoom(conn, playerName, roomCode)
+
+			/*
+				If we returned from joinRoom, that either means that the room code
+				is invalid, the player left the room, or the room is full,
+				so we just repeat the handshake process
+			*/
+
+			continue
+		case createRoomMsg:
+			createRoom(conn, playerName)
+			continue
+		default:
+			conn.Close() // TODO: close the conn gracefully
+			return
+		}
+	}
 }
 
 func main() {
