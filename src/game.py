@@ -3,8 +3,10 @@ import websocket, json, pygame, threading, math
 from pygame import Vector2
 from enum import Enum
 
+# Definições Iniciais
+WIDTH = 1080
+HEIGHT = 720
 SERVER = "ws://localhost:8080/ws"
-RESOLUTION = (800, 640)
 VELOCITY = 5
 
 class Message(Enum):
@@ -42,10 +44,10 @@ class LocalPlayer(Player):
         self.ogImage = pygame.image.load("../assets/player.png")
         self.image = self.ogImage
         self.rect = self.image.get_rect()   
-        self.rect.center = (RESOLUTION[0]/2, RESOLUTION[1]/2)
+        self.rect.center = (WIDTH/2, HEIGHT/2)
 
         self.collisionRect = self.image.get_rect()
-        self.collisionRect.center = (RESOLUTION[0]/2, RESOLUTION[1]/2)
+        self.collisionRect.center = (WIDTH/2, HEIGHT/2)
 
         self.lastMousePos = (0, 0)
 
@@ -67,12 +69,12 @@ class LocalPlayer(Player):
         mousePos = pygame.mouse.get_pos()   
         # print(mousePos)
         if pygame.mouse.get_focused() and mousePos != self.lastMousePos:
-            directionVector = Vector2(mousePos[0] - RESOLUTION[0]/2, mousePos[1] - RESOLUTION[1]/2)
+            directionVector = Vector2(mousePos[0] - WIDTH/2, mousePos[1] - HEIGHT/2)
             angle = math.atan2(directionVector.y, directionVector.x)*-1
             # print(math.degrees(angle))
             self.image = pygame.transform.rotate(self.ogImage, math.degrees(angle))
             self.rect = self.image.get_rect()   
-            self.rect.center = (RESOLUTION[0]/2, RESOLUTION[1]/2)
+            self.rect.center = (WIDTH/2, HEIGHT/2)
             self.direction = directionVector.normalize()
             self.lastMousePos = mousePos
 
@@ -158,21 +160,24 @@ class Camera():
         self.y = y
 
     def update(self, playerX: int, playerY: int) -> None:
-        self.x = playerX - RESOLUTION[0]/2 + 120/2
-        self.y = playerY - RESOLUTION[1]/2 + 120/2
+        self.x = playerX - WIDTH/2 + 120/2
+        self.y = playerY - HEIGHT/2 + 120/2
 
 class Game():
-    def __init__(self) -> None:
-        pygame.init()
-        self.screen = pygame.display.set_mode(RESOLUTION)
+    def __init__(self, screen: pygame.Surface, nick: str, roomCode: str) -> None:
+        self.nickname = nick
+        self.roomCode = roomCode
+        self.handshakeCompleted = False
 
         self.serverThread = threading.Thread(target=self.websocketThread)
         self.serverThread.start()
 
+        self.screen = screen
         self.player = LocalPlayer(self.ws)
         self.firstPlayerUpdate = True
 
-        self.mainLoop()
+        while not self.handshakeCompleted:
+            pass
 
     def mainLoop(self) -> None:
         self.remotePlayers = pygame.sprite.Group()
@@ -216,18 +221,19 @@ class Game():
         self.ws.run_forever()
 
     def performHandshake(self, conn: websocket.WebSocket) -> None:
-        option = input("join or create?")
-        if option == "join":
-            code = input("Enter room code: ")
-            joinRoom = {"type": Message.JoinRoom.value, "name": "test", "room": code}
+        if self.roomCode is not None:
+            joinRoom = {"type": Message.JoinRoom.value, "name": self.nickname, "room": self.roomCode}
             res = json.dumps(joinRoom)
             print(res)
             conn.send(res)
         else:
-            createRoom = {"type": Message.CreateRoom.value, "name": "test"}
+            createRoom = {"type": Message.CreateRoom.value, "name": self.nickname}
             res = json.dumps(createRoom)
             print(res)
             conn.send(res)
+
+        # so much stuff could have gone wrong, but meh
+        self.handshakeCompleted = True
 
     def onServerMessage(self, conn: websocket.WebSocket, message) -> None:
         serverMsg = json.loads(message)
@@ -262,6 +268,3 @@ class Game():
                 for player in self.remotePlayers:
                     if player.id == serverMsg["player_id"]:
                         self.remotePlayers.remove(player)
-
-game = Game()
-game.mainLoop()
