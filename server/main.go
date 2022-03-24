@@ -24,6 +24,7 @@ const (
 const (
 	joinRoomMsg = iota
 	createRoomMsg
+	playerInfoMsg
 	dataMsg
 	errorMsg
 )

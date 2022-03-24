@@ -1,5 +1,7 @@
 package main
 
+import "log"
+
 // Random stuff on the map, e.g. bullets, obstacles, or power-ups
 type Object interface {
 	objType() int
@@ -17,10 +19,11 @@ const (
 )
 
 const (
-	initialBulletSpeed = 20
-	friction           = 2
-	bulletWidth        = 20
-	bulletHeight       = 20
+	initialBulletSpeed = 30
+	friction           = 1
+	bulletWidth        = 62
+	bulletHeight       = 19
+	bulletDamage       = 20
 )
 
 type Obstacle struct {
@@ -54,6 +57,8 @@ type Bullet struct {
 	x, y, w, h int
 	speed      int
 	direction  Vec2f
+	shooter    *Player
+	room       *Room
 }
 
 func newBullet(shooter *Player) *Bullet {
@@ -64,6 +69,8 @@ func newBullet(shooter *Player) *Bullet {
 		h:         bulletHeight,
 		speed:     initialBulletSpeed,
 		direction: shooter.Direction,
+		shooter:   shooter,
+		room:      shooter.room,
 	}
 }
 
@@ -87,8 +94,52 @@ func (b Bullet) height() int {
 	return b.h
 }
 
+func (b *Bullet) vanish() {
+	for i, obj := range b.room.objects {
+		if bullet, ok := obj.(*Bullet); !ok || bullet != b {
+			continue
+		}
+
+		b.room.lock.Lock()
+		b.room.objects = append(b.room.objects[:i], b.room.objects[i+1:]...)
+		b.room.lock.Unlock()
+	}
+}
+
 func (b *Bullet) update() {
 	b.x += int(b.direction.scale(float64(b.speed)).X)
 	b.y += int(b.direction.scale(float64(b.speed)).Y)
 	b.speed -= friction
+
+	if b.speed <= 0 {
+		b.vanish()
+	}
+
+	for _, player := range b.room.players {
+		if b.x < player.PosX+playerWidth && b.x+bulletWidth > player.PosX {
+			if b.y < player.PosY+playerHeight && b.y+bulletHeight > player.PosY {
+				log.Printf("shot player %d\n", player.Id)
+				if player.isDead || player == b.shooter {
+					continue
+				}
+
+				b.vanish()
+
+				player.Health -= bulletDamage
+				if player.Health <= 0 {
+					b.shooter.Kills += 1
+
+					deathEvent := DeathEvent{
+						Type:      dataMsg,
+						EventType: deathEvnt,
+						PlayerId:  player.Id,
+						KillerId:  b.shooter.Id,
+					}
+					b.room.notifyAllPlayers(deathEvent)
+
+					go player.respawn()
+				}
+			}
+		}
+	}
 }

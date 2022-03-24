@@ -42,7 +42,7 @@ type Room struct {
 	chat   chan string
 	events chan Event
 
-	closing bool
+	isClosing bool
 }
 
 func newRoom(creator *Player) *Room {
@@ -70,24 +70,38 @@ func (room *Room) notifyAllPlayers(event Event) {
 	}
 }
 
-func (room *Room) handleEvent() {
-	event := <-room.events
+func (room *Room) notifyAllOtherPlayers(event Event) {
+	for _, player := range room.players {
+		if player.Id == event.playerId() {
+			continue
+		}
 
-	player := room.getPlayer(event.PlayerId)
-	if player == nil {
-		// prob the event from a player that left the room
+		player.events <- event
+	}
+}
+
+func (room *Room) handleEvent() {
+	if len(room.events) == 0 {
 		return
 	}
 
-	switch event.EventType {
-	case move:
-		player.processMovement(event.XOffset, event.YOffset, event.Direction)
-	case shoot:
+	event := <-room.events
+
+	player := room.getPlayer(event.playerId())
+	if player == nil || player.isDead && event.eventType() != leaveRoomEvnt {
+		return
+	}
+
+	switch event.eventType() {
+	case moveEvnt:
+		ge, _ := event.(GenericEvent)
+		player.processMovement(ge.XOffset, ge.YOffset, ge.Direction)
+	case shootEvnt:
 		bullet := newBullet(player)
 		room.objects = append(room.objects, bullet)
-		room.notifyAllPlayers(event)
-	case leaveRoom:
-		if room.closing {
+		room.notifyAllOtherPlayers(event)
+	case leaveRoomEvnt:
+		if room.isClosing {
 			for i, r := range globalState.rooms {
 				if r == room {
 					globalState.lock.Lock()
@@ -100,20 +114,22 @@ func (room *Room) handleEvent() {
 			return
 		}
 
-		room.notifyAllPlayers(event)
+		room.notifyAllOtherPlayers(event)
 	default:
-		log.Println("Received invalid event message from player ", event.PlayerId)
+		log.Println("Received invalid event message from player ", event.playerId())
 		player.disconnect() // TODO: fix this
 	}
 }
 
 func (room *Room) mainLoop() {
-	// TODO: execute at x ticks?
 	for {
 		room.handleEvent()
 		for _, obj := range room.objects {
 			obj.update()
 		}
+
+		// uh, yeah
+		time.Sleep(time.Millisecond * 13)
 	}
 }
 
